@@ -6,3 +6,9 @@ folium
 streamlit-folium
 shapely
 pyproj
+streamlit
+pandas
+geopandas
+folium
+streamlit-folium
+openai
