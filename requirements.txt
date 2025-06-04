@@ -12,3 +12,11 @@ geopandas
 folium
 streamlit-folium
 openai
+streamlit
+pandas
+geopandas
+shapely
+folium
+streamlit-folium
+openai
+pyarrow

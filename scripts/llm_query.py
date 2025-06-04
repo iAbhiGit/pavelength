@@ -2,7 +2,6 @@ import openai
 import os
 import streamlit as st
 
-# Define your expected standard fields
 EXPECTED_FIELDS = [
     "Segment_ID",
     "Segment name",
@@ -26,64 +25,72 @@ def query_to_filter(user_query, column_mapping):
     """
     openai.api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
 
-    # Prompt with domain context and examples
-    expected_to_actual = column_mapping
+    expected_to_actual = {field: column_mapping.get(field, field) for field in EXPECTED_FIELDS}
 
     prompt = f"""
-You are a pavement condition analysis assistant. Convert user queries into valid Pandas filter expressions.
+You are a pavement condition analysis assistant specialized in road and pavement management systems. Your task is to convert natural language queries into valid Pandas-compatible `.query()` strings.
 
-Mapped fields:
+Input:
+- User-provided query: a natural language description
+- Field mapping: a dictionary mapping standardized field names (like 'PCI', 'Zone') to actual column names in the uploaded dataset
+
+Mapped Fields (use these in output):
 {expected_to_actual}
 
-Important fields:
+Domain Context:
 - PCI: Pavement Condition Index (0–100)
 - AADT: Annual Average Daily Traffic (numeric)
-- Zone: Name of subdivision, area, region (string) — treat like free-text
-- Pavement type: May include Asphalt, Concrete, etc.
-- Last rehab year: Integer year (e.g., 2015, 2020)
+- Zone: area or region string
+- Pavement type: values like Asphalt, Concrete
+- Last rehab year: year field (e.g., 2020)
 
-Synonyms and NLP mappings:
+Synonyms:
 - "excellent condition" → PCI >= 85
 - "very good condition" → 70 <= PCI < 85
 - "good" → 55 <= PCI < 70
 - "fair" → 40 <= PCI < 55
 - "poor" → 25 <= PCI < 40
 - "very poor" → 10 <= PCI < 25
-- "failed" or "bad roads" or "worst" → PCI < 10 or PCI < 25
-- "recently rehabilitated" → `Last rehab year` >= 2020
-- "AC" → `Pavement type` == "Asphalt"
-- "concrete" → `Pavement type` == "Concrete"
+- "failed", "worst roads", "bad roads" → PCI < 25
+- "recently rehabilitated" → Last rehab year >= 2020
+- "concrete" → Pavement type == "Concrete"
+- "AC" or "asphalt" → Pavement type == "Asphalt"
 - "high traffic" → AADT > 5000
 - "low traffic" → AADT < 1000
 
-Formatting rules:
-- Return ONLY a valid Pandas `.query()` string
-- Wrap column names with spaces or special characters using backticks: \` \`
-- Use double quotes for string values
-- Combine filters using parentheses for clarity
+Output Format Rules:
+- Return ONLY the Pandas query string (no variable assignments)
+- Combine expressions with parentheses
+- Wrap column names (even if no spaces) in backticks
+- Use double quotes for string values (e.g., `Zone` == "North")
+- NO triple backticks or markdown
+- Do not comment your output or return explanations
 
-Example conversions:
-1. Bad roads in zone South-East
-→ PCI < 25 and `Zone` == "South-East"
-
-2. Recently rehabilitated roads with AADT above 7000
-→ `Last rehab year` >= 2020 and AADT > 7000
-
-3. Concrete pavement segments in Sector 5 with PCI below 40
-→ `Pavement type` == "Concrete" and `Zone` == "Sector 5" and PCI < 40
-
-Now generate the filter for:
+User Query:
 {user_query}
 """
 
-    client = openai.OpenAI()
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
+    try:
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+        raw_query = response.choices[0].message.content.strip()
 
-    result = response.choices[0].message.content.strip()
-    cleaned = result.replace("df[", "").replace("]", "").replace("\"", "").replace("`", "")
+        # Remove code wrappers
+        for token in ["```python", "```", "query =", "query="]:
+            raw_query = raw_query.replace(token, "")
 
-    return cleaned
+        # Replace expected fields with actual mapped columns
+        for expected, actual in expected_to_actual.items():
+            if actual:
+                raw_query = raw_query.replace(f"`{expected}`", f"`{actual}`")
+
+        cleaned_query = raw_query.replace("\n", " ").replace("\\", "").strip()
+        return cleaned_query
+
+    except Exception as e:
+        st.error(f"❌ LLM query generation failed: {e}")
+        return "PCI >= 0"

@@ -1,5 +1,8 @@
 import geopandas as gpd
-import zipfile, os, tempfile
+import zipfile
+import os
+import tempfile
+import pandas as pd
 
 def extract_shapefile(uploaded_zip):
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -21,11 +24,22 @@ def extract_shapefile(uploaded_zip):
                 break
 
         if not shp_path:
-            raise FileNotFoundError("No .shp file found in uploaded ZIP. Ensure it's not too deeply nested or renamed.")
+            raise FileNotFoundError("No .shp file found in uploaded ZIP. Ensure it's not deeply nested.")
 
         gdf = gpd.read_file(shp_path)
 
+        # Convert CRS to WGS84 if needed
         if gdf.crs and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs("EPSG:4326")
+
+        # ✅ Fix duplicate column names
+        cols = pd.Series(gdf.columns)
+        duplicates = cols.duplicated()
+        if duplicates.any():
+            for dup in cols[duplicates].unique():
+                dups_idx = cols[cols == dup].index.tolist()
+                for i, idx in enumerate(dups_idx[1:], start=1):  # skip first occurrence
+                    cols[idx] = f"{dup}_{i}"
+            gdf.columns = cols
 
         return gdf

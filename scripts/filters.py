@@ -1,26 +1,78 @@
-# scripts/filters.py
 import pandas as pd
 
-def apply_filters(gdf, pci_col, pci_range=None, zone_col=None, selected_zone=None):
+def apply_filters(
+    gdf,
+    pci_range=None,
+    selected_zone=None,
+    aadt_range=None,
+    pavement_types=None,
+    rehab_year_range=None,
+    pavement_age_range=None,
+    segment_area_range=None,
+    width_range=None,
+    thickness_range=None,
+    length_range=None
+):
     """
-    Filters the GeoDataFrame based on PCI range and optional zone.
+    Filters the GeoDataFrame based on standardized expected fields.
 
     Parameters:
-    - gdf: GeoDataFrame containing segment data
-    - pci_col: str, name of the PCI column
-    - pci_range: tuple (min, max) PCI filter
-    - zone_col: str or None, column name for zone
-    - selected_zone: str or None, specific zone to filter
+    - gdf: GeoDataFrame with standardized column names.
+    - pci_range: (min, max) PCI values.
+    - selected_zone: string to filter 'Zone'.
+    - aadt_range: (min, max) AADT values.
+    - pavement_types: list of types (e.g., ["Asphalt", "Concrete"])
+    - rehab_year_range: (min, max) for 'Last rehab year'.
+    - pavement_age_range: (min, max) for 'Pavement age'.
+    - segment_area_range: (min, max) for 'Segment area'.
+    - width_range: (min, max) for 'Width'.
+    - thickness_range: (min, max) for 'Thickness'.
+    - length_range: (min, max) for 'Length'.
 
     Returns:
     - Filtered GeoDataFrame
     """
-    # Ensure PCI column is numeric
-    gdf[pci_col] = pd.to_numeric(gdf[pci_col], errors='coerce')
-    gdf = gdf.dropna(subset=[pci_col])
+    def safe_numeric_filter(df, col, value_range):
+        if col in df.columns and value_range:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df = df.dropna(subset=[col])
+            df = df[(df[col] >= value_range[0]) & (df[col] <= value_range[1])]
+        return df
 
-    if pci_range:
-        gdf = gdf[(gdf[pci_col] >= pci_range[0]) & (gdf[pci_col] <= pci_range[1])]
-    if zone_col and selected_zone:
-        gdf = gdf[gdf[zone_col] == selected_zone]
+    # Ensure gdf is valid before filtering
+    if not isinstance(gdf, pd.DataFrame) or gdf.empty:
+        return pd.DataFrame(columns=gdf.columns if hasattr(gdf, 'columns') else [])
+
+    # PCI
+    gdf = safe_numeric_filter(gdf, "PCI", pci_range)
+
+    # Zone
+    if "Zone" in gdf.columns and selected_zone:
+        gdf = gdf[gdf["Zone"] == selected_zone]
+
+    # AADT
+    gdf = safe_numeric_filter(gdf, "AADT", aadt_range)
+
+    # Pavement type
+    if "Pavement type" in gdf.columns and pavement_types:
+        gdf = gdf[gdf["Pavement type"].isin(pavement_types)]
+
+    # Last rehab year
+    gdf = safe_numeric_filter(gdf, "Last rehab year", rehab_year_range)
+
+    # Pavement age
+    gdf = safe_numeric_filter(gdf, "Pavement age", pavement_age_range)
+
+    # Segment area
+    gdf = safe_numeric_filter(gdf, "Segment area", segment_area_range)
+
+    # Width
+    gdf = safe_numeric_filter(gdf, "Width", width_range)
+
+    # Thickness
+    gdf = safe_numeric_filter(gdf, "Thickness", thickness_range)
+
+    # Length
+    gdf = safe_numeric_filter(gdf, "Length", length_range)
+
     return gdf
