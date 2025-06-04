@@ -22,63 +22,57 @@ EXPECTED_FIELDS = [
 def query_to_filter(user_query, column_mapping):
     """
     Converts a natural language query to a Pandas-compatible query string using OpenAI,
-    fully aware of pavement engineering standards (ASTM D6433, FAA, FHWA).
+    including context-aware logic for pavement engineering (ASTM D6433).
     """
     openai.api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
 
+    # Prompt with domain context and examples
     expected_to_actual = column_mapping
 
     prompt = f"""
-You are a pavement condition analysis assistant. Your task is to convert user queries into Pandas filter expressions.
+You are a pavement condition analysis assistant. Convert user queries into valid Pandas filter expressions.
 
-Available fields:
+Mapped fields:
 {expected_to_actual}
 
-Pavement Engineering Context:
-- ASTM D6433 PCI Classification:
-  - Excellent: PCI >= 85
-  - Very Good: 70 <= PCI < 85
-  - Good: 55 <= PCI < 70
-  - Fair: 40 <= PCI < 55
-  - Poor: 25 <= PCI < 40
-  - Very Poor: 10 <= PCI < 25
-  - Failed: PCI < 10
+Important fields:
+- PCI: Pavement Condition Index (0–100)
+- AADT: Annual Average Daily Traffic (numeric)
+- Zone: Name of subdivision, area, region (string) — treat like free-text
+- Pavement type: May include Asphalt, Concrete, etc.
+- Last rehab year: Integer year (e.g., 2015, 2020)
 
-- FAA Runway Standards (if zone or surface type includes runway/taxiway/apron):
-  - Runway Excellent: PCI >= 85
-  - Taxiway/Apron Satisfactory: PCI >= 70
-  - Serious Condition: 10 <= PCI < 25
-  - Failed: PCI < 10
+Synonyms and NLP mappings:
+- "excellent condition" → PCI >= 85
+- "very good condition" → 70 <= PCI < 85
+- "good" → 55 <= PCI < 70
+- "fair" → 40 <= PCI < 55
+- "poor" → 25 <= PCI < 40
+- "very poor" → 10 <= PCI < 25
+- "failed" or "bad roads" or "worst" → PCI < 10 or PCI < 25
+- "recently rehabilitated" → `Last rehab year` >= 2020
+- "AC" → `Pavement type` == "Asphalt"
+- "concrete" → `Pavement type` == "Concrete"
+- "high traffic" → AADT > 5000
+- "low traffic" → AADT < 1000
 
-- Synonyms to recognize:
-  - "excellent condition" = PCI >= 85
-  - "serious" = 10 <= PCI < 25
-  - "recently rehabilitated" = Last rehab year >= 2020
-  - "AC" = Pavement type == "Asphalt"
-  - "major" or "arterial" = Functional Class == "Arterial"
-  - "bad roads" or "worst segments" = PCI < 25
+Formatting rules:
+- Return ONLY a valid Pandas `.query()` string
+- Wrap column names with spaces or special characters using backticks: \` \`
+- Use double quotes for string values
+- Combine filters using parentheses for clarity
 
-Rules:
-- Output only the Pandas query string. No explanation.
-- Quote string values with double quotes.
-- Wrap any column with spaces/special characters in backticks.
-- Use only fields from the mapping.
-- Use parentheses with AND/OR combinations.
+Example conversions:
+1. Bad roads in zone South-East
+→ PCI < 25 and `Zone` == "South-East"
 
-Examples:
-1. Show segments in excellent condition
-→ PCI >= 85
+2. Recently rehabilitated roads with AADT above 7000
+→ `Last rehab year` >= 2020 and AADT > 7000
 
-2. Taxiways in serious condition
-→ `Zone` == "Taxiway" and PCI >= 10 and PCI < 25
+3. Concrete pavement segments in Sector 5 with PCI below 40
+→ `Pavement type` == "Concrete" and `Zone` == "Sector 5" and PCI < 40
 
-3. Recently rehabilitated AC roads with PCI > 55
-→ `Last rehab year` >= 2020 and `Pavement type` == "Asphalt" and PCI > 55
-
-4. Roads with good PCI and AADT > 5000
-→ PCI >= 55 and PCI < 70 and AADT > 5000
-
-User query:
+Now generate the filter for:
 {user_query}
 """
 
@@ -91,4 +85,5 @@ User query:
 
     result = response.choices[0].message.content.strip()
     cleaned = result.replace("df[", "").replace("]", "").replace("\"", "").replace("`", "")
+
     return cleaned
